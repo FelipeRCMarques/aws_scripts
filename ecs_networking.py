@@ -3,6 +3,7 @@ from datetime import datetime
 
 def log_networking_with_timestamp(region="sa-east-1", log_file="network_log.txt"):
     ecs_client = boto3.client('ecs', region_name=region)
+    ec2_client = boto3.client('ec2', region_name=region)
     clusters = ecs_client.list_clusters()['clusterArns']
 
     with open(log_file, "w") as log:
@@ -11,21 +12,28 @@ def log_networking_with_timestamp(region="sa-east-1", log_file="network_log.txt"
             for service in services:
                 service_details = ecs_client.describe_services(cluster=cluster, services=[service])['services'][0]
                 vpc_config = service_details.get('networkConfiguration', {}).get('awsvpcConfiguration', {})
-                vpc_id = vpc_config.get('subnets', [])
+                subnets = vpc_config.get('subnets', [])
                 security_groups = vpc_config.get('securityGroups', [])
+
+                # Fetch VPC ID from subnet
+                vpc_id = None
+                if subnets:
+                    subnet_details = ec2_client.describe_subnets(SubnetIds=subnets)
+                    vpc_id = subnet_details['Subnets'][0]['VpcId'] if subnet_details['Subnets'] else None
 
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 log.write(f"Timestamp: {timestamp}\n")
                 log.write(f"Cluster: {cluster}\n")
                 log.write(f"Service: {service}\n")
                 log.write(f"VPC: {vpc_id}\n")
-                log.write(f"Subnets: {vpc_config.get('subnets', [])}\n")
+                log.write(f"Subnets: {subnets}\n")
                 log.write(f"Security Groups: {security_groups}\n")
                 log.write("-" * 40 + "\n")
 
 
 def update_networking(region="sa-east-1", main_config=None, shared_config=None, public_config=None):
     ecs_client = boto3.client('ecs', region_name=region)
+    ec2_client = boto3.client('ec2', region_name=region)
     clusters = ecs_client.list_clusters()['clusterArns']
 
     for cluster in clusters:
@@ -33,7 +41,13 @@ def update_networking(region="sa-east-1", main_config=None, shared_config=None, 
         for service in services:
             service_details = ecs_client.describe_services(cluster=cluster, services=[service])['services'][0]
             vpc_config = service_details.get('networkConfiguration', {}).get('awsvpcConfiguration', {})
-            vpc_id = vpc_config.get('subnets', [])
+            subnets = vpc_config.get('subnets', [])
+
+            # Fetch VPC ID from subnet
+            vpc_id = None
+            if subnets:
+                subnet_details = ec2_client.describe_subnets(SubnetIds=subnets)
+                vpc_id = subnet_details['Subnets'][0]['VpcId'] if subnet_details['Subnets'] else None
 
             if vpc_id:
                 if "main" in vpc_id and main_config:
